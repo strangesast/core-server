@@ -1,16 +1,15 @@
 {
   "compilerOptions": {
     "incremental": true,
-    "module": "commonjs",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "target": "es6",
-    "noImplicitAny": true,
+    "module": "ES6",
+    "target": "ES6",
+    "lib": ["ES6"],
+    "types": ["node"],
     "moduleResolution": "node",
     "sourceMap": true,
     "outDir": "dist"
   },
   "include": [
-      "src/**/*"
+    "src/**/*.ts"
   ]
 }
