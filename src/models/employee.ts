@@ -1,7 +1,10 @@
-const {model, Schema} = require('mongoose');
+import {model, Schema} from 'mongoose';
 
 const employeeSchema = new Schema({
-  id: Number,
+  id: {
+    type: Number,
+    required: true,
+  },
   code: String,
   nameFirst: String,
   nameMiddle: String,
@@ -9,3 +12,5 @@ const employeeSchema = new Schema({
 }, {collection: 'employees'});
 
 export const Employee = model('Employee', employeeSchema);
+
+export default Employee;

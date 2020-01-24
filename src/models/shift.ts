@@ -1,7 +1,11 @@
-const {model, Schema, ObjectId} = require('mongoose');
+import {model, Schema} from 'mongoose';
 
 const punchSchema = new Schema({
-  id: ObjectId,
+  id: {
+    type: Number,
+    unique: true,
+    required: true,
+  },
   employeeId: Number,
   date: Date,
   pollDate: Date,
@@ -10,11 +14,11 @@ const punchSchema = new Schema({
 export const Punch = model('Punch', punchSchema);
 
 const shiftSchema = new Schema({
-  id: ObjectId,
+  id: Schema.Types.ObjectId,
   employeeId: Number,
   startDate: Date,
   endDate: Date,
-  punches: [{ type : ObjectId, ref: 'Punch' }],
+  punches: [{ type: Number, ref: 'Punch' }],
 }, {collection: 'shifts'});
 
 export const Shift = model('Shift', shiftSchema);

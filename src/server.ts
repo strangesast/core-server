@@ -1,25 +1,22 @@
-const http = require('http');
-const express = require('express');
-const mongoose = require('mongoose');
-const { ApolloServer } = require('apollo-server-express');
+import http from 'http';
+import express from 'express';
+import mongoose from 'mongoose';
+import { ApolloServer } from 'apollo-server-express';
 
 import { Employee, typeDefs } from './models';
 
-const resolvers = {
-  Query: {
-    hello: () => 'Hello world!',
-  },
-};
+import resolvers from './resolvers';
+import schema from './schema';
 
 const apolloServer = new ApolloServer({
-  typeDefs,
-  resolvers,
+   typeDefs: schema,
+   resolvers,
 });
 
 const app = express();
-mongoose.connect('mongodb://localhost:27017/test', {useNewUrlParser: true});
+mongoose.connect('mongodb://localhost:27017/test', {useNewUrlParser: true, useUnifiedTopology: true });
 
-apolloServer.applyMiddleware({ app });
+// apolloServer.applyMiddleware({ app });
 
 app.get('/employees', async (req, res) => {
   const employees = await Employee.find();
@@ -41,5 +38,5 @@ const port = 3000;
 const host = '0.0.0.0';
 server.listen({ host, port }, () => {
   console.log(`Server is listening on ${host}:${port}`);
-  console.log(`Apollo at ${apolloServer.graphqlPath}`)
+  // console.log(`Apollo at ${apolloServer.graphqlPath}`)
 });
