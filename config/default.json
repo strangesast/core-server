@@ -1,0 +1,6 @@
+{
+  "secret": "secret123",
+  "postgres": {
+    "connectionString": "postgresql://postgres:password@localhost:5432/development"
+  }
+}
