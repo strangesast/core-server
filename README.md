@@ -1,0 +1,2 @@
+# CORE Server
+- JWT Authentication
