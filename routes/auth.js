@@ -11,6 +11,38 @@ function createToken(id, username) {
   return token;
 }
 
+router.get('/check', async (req, res, next) => {
+  const query = req.query;
+
+  const keys = ['username', 'email']
+    .map(k => ([k, query[k]]))
+    .filter(([k, v]) => v);
+
+  const [s, args] = keys
+    .map(([k, v], i) => ([`(SELECT '${k}' as key FROM users where ${k} = $${i + 1} LIMIT 1)`, v]))
+    .reduce(([a, b], [aa, bb]) => ([a.concat(aa), b.concat(bb)]), [[], []]);
+
+  if (s.length == 0) {
+    res.json({});
+    return;
+  }
+  const q = s.join('UNION ALL');
+
+  let result;
+  const client = await req.app.locals.db.connect();
+  try {
+    result = await client.query(q, args);
+    result = result.rows.map(row => row['key']);
+    result = keys.reduce((obj, [k]) => ({...obj, [k]: result.includes(k)}), {});
+    res.json(result);
+  } catch (e) {
+    next(e);
+    return;
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/user', expressJwt({secret}), async (req, res) => {
   let user = req.user || null;
   if (user != null) {
@@ -57,15 +89,13 @@ router.delete('/user', async (req, res) => {
 });
 
 router.post('/user', async (req, res, next) => {
-  console.log('user', req.user);
   if (req.user != null) {
     next();
     return;
   }
   const { username, password, name, email } = req.body;
-  const { first: firstName, last: lastName } = name;
-  const args = [username, email, password, firstName, lastName];
-  console.log(args);
+  const { middle: middleName, first: firstName, last: lastName } = name;
+  const args = [username, email, password, firstName, lastName, middleName];
   if (args.slice(0, 3).some(v => !v)) {
     res.status(400).json({status: 400, message: `Missing required user properties`}); 
     return;
@@ -75,13 +105,14 @@ router.post('/user', async (req, res, next) => {
   const client = await req.app.locals.db.connect();
   try {
     const result = await client.query(
-      'insert into users(username, email, password, first_name, last_name) values($1, $2, crypt($3, gen_salt(\'bf\')), $4, $5) returning id',
+      'insert into users(username, email, password, first_name, last_name, middle_name) values($1, $2, crypt($3, gen_salt(\'bf\')), $4, $5, $6) returning id',
       args,
     );
     ({ id } = result.rows[0]);
-  } catch (e) {
-    const constraint = e.constraint;
-    res.status(400).json({status: 400, message: e.detail});
+  } catch (error) {
+    const constraint = error.constraint;
+    const message = error.detail || 'failed to insert';
+    res.status(400).json({status: 400, message, error});
     return;
   } finally {
     client.release();
@@ -93,29 +124,32 @@ router.post('/user', async (req, res, next) => {
 router.post('/login', async (req, res) => {
   const { email, username, password } = req.body;
   if ((!username && !email) || !password) {
-    res.sendStatus(400);
+    res.status(400).json({status: 400, message: 'Missing required parameters'});
     return;
   }
   const client = await req.app.locals.db.connect();
   let q, args;
   if (email) {
-    q = 'select username from users where email = lower($1) and password = crypt($2, password)';
+    q = 'select * from users where email = lower($1) and password = crypt($2, password)';
     args = [email, password];
   } else {
-    q = 'select username from users where username = $1 and password = crypt($2, password)';
+    q = 'select * from users where username = $1 and password = crypt($2, password)';
     args = [username, password];
   }
   try {
     const result = await client.query(q, args);
     if (result.rows.length > 0) {
-      const {username} = result.rows[0];
+      let user = result.rows[0];
+      const id = user.id;
+      const {first_name, last_name, middle_name, username, email} = user;
+      user = {name: {first: first_name, middle: middle_name, last: last_name}, username, email, roles: ['toast']};
       const token = createToken(id, username);
-      res.json({token});
+      res.json({token, user});
     } else {
       res.sendStatus(401);
     }
-  } catch (e) {
-    res.sendStatus(400);
+  } catch (error) {
+    res.status(400).json({status: 400, message: error.detail, error});
   } finally {
     client.release();
   }
