@@ -47,7 +47,7 @@ router.get('/user', expressJwt({secret}), async (req, res) => {
   let user = req.user || null;
   if (user != null) {
     const {id, username} = user;
-    const q = 'select id, first_name, last_name, username, email from users where id = $1 OR username = $2';
+    const q = 'select first_name, last_name, username, email from users where id = $1 OR username = $2';
     const args = [id, username];
     const client = await req.app.locals.db.connect();
 
@@ -65,7 +65,8 @@ router.get('/user', expressJwt({secret}), async (req, res) => {
       res.status(500).json({status: 500, message: `user not found with id (${id}) or username (${username})`});
       return;
     }
-    user = result.rows[0];
+
+    user = buildUserFromQuery(result.rows[0]);
   }
   res.json({ user });
 });
@@ -139,11 +140,9 @@ router.post('/login', async (req, res) => {
   try {
     const result = await client.query(q, args);
     if (result.rows.length > 0) {
-      let user = result.rows[0];
-      const id = user.id;
-      const {first_name, last_name, middle_name, username, email} = user;
-      user = {name: {first: first_name, middle: middle_name, last: last_name}, username, email, roles: ['toast']};
-      const token = createToken(id, username);
+      const id = result.rows[0].id;
+      user = buildUserFromQuery(result.rows[0]);
+      const token = createToken(id, user.username);
       res.json({token, user});
     } else {
       res.sendStatus(401);
@@ -154,6 +153,12 @@ router.post('/login', async (req, res) => {
     client.release();
   }
 });
+
+function buildUserFromQuery(obj) {
+  const {first_name, last_name, middle_name, username, email} = obj;
+  const user = {name: {first: first_name, middle: middle_name, last: last_name}, username, email, roles: ['toast']};
+  return user;
+}
 
 
 module.exports = router;
