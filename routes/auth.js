@@ -7,7 +7,17 @@ var config = require('config');
 var secret = config.get('secret');
 
 function createToken(id, username) {
-  const token = jwt.sign({id, username}, secret, {expiresIn: '365 days'});
+  const payload = {
+    id,
+    username,
+    admin: true,
+    'https://hasura.io/jwt/claims': {
+      'x-hasura-allowed-roles': ['admin'],
+      'x-hasura-default-role': 'admin',
+      'x-hasura-user-id': '' + id,
+    },
+  };
+  const token = jwt.sign(payload, secret, {expiresIn: '365 days'});
   return token;
 }
 
@@ -43,52 +53,6 @@ router.get('/check', async (req, res, next) => {
   }
 });
 
-router.get('/user', expressJwt({secret}), async (req, res) => {
-  let user = req.user || null;
-  if (user != null) {
-    const {id, username} = user;
-    const q = 'select first_name, last_name, username, email from users where id = $1 OR username = $2';
-    const args = [id, username];
-    const client = await req.app.locals.db.connect();
-
-    let result;
-    try {
-      result = await client.query(q, args);
-    } catch (e) {
-      next(e);
-      return;
-    } finally {
-      client.release();
-    }
-
-    if (result.rows.length == 0) {
-      res.status(500).json({status: 500, message: `user not found with id (${id}) or username (${username})`});
-      return;
-    }
-
-    user = buildUserFromQuery(result.rows[0]);
-  }
-  res.json({ user });
-});
-
-router.delete('/user', async (req, res) => {
-  const { username, id } = req.body;
-  if (!id && !username) {
-    res.status(400).json({status: 400, message: 'missing required parameter'});
-    return;
-  }
-  const client = await req.app.locals.db.connect();
-  try {
-    const result = await client.query(`delete from users where ${id != null ? 'id' : 'username'}=$1`, [id != null ? id : username])
-    res.sendStatus(201);
-  } catch (e) {
-    res.sendStatus(400);
-  } finally {
-    client.release();
-  }
-
-});
-
 router.post('/user', async (req, res, next) => {
   if (req.user != null) {
     next();
@@ -119,7 +83,7 @@ router.post('/user', async (req, res, next) => {
     client.release();
   }
   const token = createToken(id, username);
-  res.json({ token, id });
+  res.json({ token, user: { id, username }});
 });
 
 router.post('/login', async (req, res) => {
@@ -128,6 +92,7 @@ router.post('/login', async (req, res) => {
     res.status(400).json({status: 400, message: 'Missing required parameters'});
     return;
   }
+  console.log(username, email, password);
   const client = await req.app.locals.db.connect();
   let q, args;
   if (email) {
@@ -140,10 +105,9 @@ router.post('/login', async (req, res) => {
   try {
     const result = await client.query(q, args);
     if (result.rows.length > 0) {
-      const id = result.rows[0].id;
-      user = buildUserFromQuery(result.rows[0]);
-      const token = createToken(id, user.username);
-      res.json({token, user});
+      const {id, username} = result.rows[0];
+      const token = createToken(id, username);
+      res.json({token, user: {id, username}});
     } else {
       res.sendStatus(401);
     }
@@ -153,12 +117,5 @@ router.post('/login', async (req, res) => {
     client.release();
   }
 });
-
-function buildUserFromQuery(obj) {
-  const {first_name, last_name, middle_name, username, email} = obj;
-  const user = {name: {first: first_name, middle: middle_name, last: last_name}, username, email, roles: ['toast']};
-  return user;
-}
-
 
 module.exports = router;
