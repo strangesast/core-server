@@ -10,6 +10,7 @@ var { Pool } = require('pg')
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 var authRouter = require('./routes/auth');
+var dataRouter = require('./routes/data');
 
 var app = express();
 
@@ -23,6 +24,7 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use('/', indexRouter);
 app.use(authRouter);
+app.use('/data', dataRouter);
 app.use('/users', usersRouter);
 
 var connectionString = config.get('postgres.connectionString');
