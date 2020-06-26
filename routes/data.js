@@ -66,7 +66,8 @@ join (
 	from (
 		select *, dense_rank() over (partition by machine_id order by timestamp desc) as r
 		from (
-			select * from machine_execution_state
+			select *
+      from machine_execution_state
 			where value = 'ACTIVE'
 			order by timestamp desc
 		) t
