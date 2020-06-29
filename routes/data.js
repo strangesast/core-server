@@ -121,4 +121,38 @@ router.get('/weekly', async (req, res, next) => {
   }
 });
 
+router.get('/part-activity', func(`
+  select
+  	a.value as part_count,
+  	a.machine_id,
+  	a.timestamp as part_count_timestamp,
+  	a.prev_timestamp as part_count_prev_timestamp,
+  	b.timestamp,
+  	b.next_timestamp
+  from (
+  	select
+  		value,
+  		machine_id,
+  		"offset",
+  		timestamp,
+  		lag(timestamp, 1) over (partition by machine_id order by timestamp asc) as prev_timestamp
+  	from (
+  		select
+  			value,
+  			machine_id,
+  			"offset",
+  			dense_rank() over (partition by machine_id, value order by timestamp asc) as r,
+  			to_timestamp(timestamp / 1000) as timestamp
+  		from machine_state
+  		where property = 'part_count' and value != 'UNAVAILABLE'
+  	) a
+  	where r = 1
+  ) a
+  join (
+  	select * from machine_execution_state
+  	where value = 'ACTIVE'
+  ) b on (a.machine_id = b.machine_id and b.timestamp > a.prev_timestamp and b.timestamp < a.timestamp)
+  order by a.timestamp desc
+`));
+
 module.exports = router;
