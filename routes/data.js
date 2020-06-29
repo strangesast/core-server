@@ -78,7 +78,7 @@ join (
 
 router.get('/weekly', async (req, res, next) => {
   const client = await req.app.locals.db.connect();
-  let {fromDate, toDate} = req.query;
+  let {fromDate, toDate, bucketSize} = req.query;
   ([fromDate, toDate] = [fromDate, toDate].map(s => s && new Date(s))); 
   if ([fromDate, toDate].some(d => isNaN(d))) {
     const err = new Error('invalid query params');
@@ -86,17 +86,33 @@ router.get('/weekly', async (req, res, next) => {
     next(err);
     return;
   }
-  
+  bucketSize = bucketSize && parseInt(bucketSize, 10);
+  if (isNaN(bucketSize)) {
+    bucketSize = 30;
+  }
+
   try {
     const result = await client.query(`
       select bucket::integer, dt as "date", array_agg(id) as shifts, array_agg(employee_id) as employees
       from (
       	select dt, rank() over (order by dt) as bucket
-      	from generate_series($1, $2, interval '15 minutes') as "dt"
+      	from generate_series($1, $2, interval '1 minutes' * $3) as "dt"
       ) a
-      join timeclock_shifts b on (b.date_start < a.dt and b.date_stop > a.dt)
+      inner join (
+        select *
+        from (
+          select
+            id,
+            employee_id,
+            date_start,
+            date_stop,
+            (case when date_stop is null then now() else date_stop end) - date_start as duration
+          from timeclock_shifts
+        ) b
+        where duration < interval '14 hours'
+      ) b on (b.date_start < a.dt and (b.date_stop is null or b.date_stop > a.dt))
       group by bucket, dt
-      order by dt asc`, [fromDate, toDate]);
+      order by dt asc`, [fromDate, toDate, bucketSize]);
     res.json(result.rows);
   } catch (e) {
     next(e);
