@@ -76,31 +76,6 @@ join (
 ) b on (a.machine_id = b.machine_id and a.timestamp >= b.timestamp and a.timestamp < b.next_timestamp)
 `));
 
-
-/*
-const weeklyQuery = `
-  select bucket::integer, dt as "date", array_agg(id) as shifts, array_agg(employee_id) as employees
-  from (
-  	select dt, rank() over (order by dt) as bucket
-  	from generate_series($1, $2, interval '1 minutes' * $3) as "dt"
-  ) a
-  inner join (
-    select *
-    from (
-      select
-        id,
-        employee_id,
-        date_start,
-        date_stop,
-        (case when date_stop is null then now() else date_stop end) - date_start as duration
-      from timeclock_shifts
-    ) b
-    where duration < interval '14 hours'
-  ) b on (b.date_start < a.dt and (b.date_stop is null or b.date_stop > a.dt))
-  group by bucket, dt
-  order by dt asc
-`;
-*/
 const weeklyQuery = `
   select *
   from (
@@ -165,6 +140,50 @@ router.get('/weekly', async (req, res, next) => {
 
   try {
     const result = await client.query(weeklyQuery, [fromDate, toDate, bucketSize * 60]);
+    res.json(result.rows);
+  } catch (e) {
+    next(e);
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/shifts', async (req, res, next) => {
+  let {minDate, maxDate} = req.query;
+  ([minDate, maxDate] = [minDate, maxDate].map(s => s && new Date(s)));
+  if (maxDate == null) {
+    maxDate = new Date();
+  }
+  if (minDate == null) {
+    minDate = new Date(maxDate);
+    minDate.setDate(minDate.getDate() - 1);
+  }
+  const query = `
+	select
+	  a.id,
+	  a.employee_id,
+	  a.shift_num::integer,
+	  a.date,
+	  a.date_start,
+	  a.date_stop,
+	  b.segments
+	from timeclock_shifts_count a
+	join (
+	  select
+	    employee_id,
+	    shift_num,
+		array_to_json(array_agg((extract(epoch from date_start), extract(epoch from date_stop)))) as segments
+	  from timeclock_shifts_count
+	  group by employee_id, shift_num
+	) b on (a.employee_id = b.employee_id and a.shift_num = b.shift_num)
+	where (
+	  ((date_stop is null or date_stop > $1) and date_start < $2) or
+	  (date_start < $1 and date_stop > $2)
+	)
+  `;
+  const client = await req.app.locals.db.connect();
+  try {
+    const result = await client.query(query, [minDate, maxDate]);
     res.json(result.rows);
   } catch (e) {
     next(e);
