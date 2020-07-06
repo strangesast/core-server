@@ -76,6 +76,78 @@ join (
 ) b on (a.machine_id = b.machine_id and a.timestamp >= b.timestamp and a.timestamp < b.next_timestamp)
 `));
 
+
+/*
+const weeklyQuery = `
+  select bucket::integer, dt as "date", array_agg(id) as shifts, array_agg(employee_id) as employees
+  from (
+  	select dt, rank() over (order by dt) as bucket
+  	from generate_series($1, $2, interval '1 minutes' * $3) as "dt"
+  ) a
+  inner join (
+    select *
+    from (
+      select
+        id,
+        employee_id,
+        date_start,
+        date_stop,
+        (case when date_stop is null then now() else date_stop end) - date_start as duration
+      from timeclock_shifts
+    ) b
+    where duration < interval '14 hours'
+  ) b on (b.date_start < a.dt and (b.date_stop is null or b.date_stop > a.dt))
+  group by bucket, dt
+  order by dt asc
+`;
+*/
+const weeklyQuery = `
+  select *
+  from (
+    select
+    	count(*)::integer as "bucket",
+    	bucket as "date",
+    	array_agg(employee_id) as employees,
+    	array_agg(id) as shifts
+    from (
+    	select
+    		id,
+    		employee_id,
+    		to_timestamp(round(bucket / $3) * $3) at time zone 'America/New_York' as bucket
+    	from (
+    		select
+    			id,
+    			employee_id,
+    			generate_series(
+    				extract(epoch from date_start)::integer,
+    				extract(epoch from date_start + duration)::integer,
+    				$3
+    			) as bucket
+    		from (
+    			select *
+    			from (
+    				select
+    					id,
+    					date_start,
+    					date_stop,
+    					employee_id,
+    					(case when date_stop is null then now() else date_stop end) - date_start as duration
+    				from timeclock_shifts
+    			) t
+    			where (
+    				duration < interval '13 hours' and
+    				(date_stop is null or date_stop > $1) and
+    				date_start < $2
+    			)
+    		) t
+    	) t
+    ) t
+    group by bucket
+  ) t
+  where (date <= $2 and date > $1)
+  order by date asc
+`;
+
 router.get('/weekly', async (req, res, next) => {
   const client = await req.app.locals.db.connect();
   let {fromDate, toDate, bucketSize} = req.query;
@@ -92,27 +164,7 @@ router.get('/weekly', async (req, res, next) => {
   }
 
   try {
-    const result = await client.query(`
-      select bucket::integer, dt as "date", array_agg(id) as shifts, array_agg(employee_id) as employees
-      from (
-      	select dt, rank() over (order by dt) as bucket
-      	from generate_series($1, $2, interval '1 minutes' * $3) as "dt"
-      ) a
-      inner join (
-        select *
-        from (
-          select
-            id,
-            employee_id,
-            date_start,
-            date_stop,
-            (case when date_stop is null then now() else date_stop end) - date_start as duration
-          from timeclock_shifts
-        ) b
-        where duration < interval '14 hours'
-      ) b on (b.date_start < a.dt and (b.date_stop is null or b.date_stop > a.dt))
-      group by bucket, dt
-      order by dt asc`, [fromDate, toDate, bucketSize]);
+    const result = await client.query(weeklyQuery, [fromDate, toDate, bucketSize * 60]);
     res.json(result.rows);
   } catch (e) {
     next(e);
