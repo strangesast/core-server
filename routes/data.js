@@ -159,23 +159,23 @@ router.get('/shifts', async (req, res, next) => {
     minDate.setDate(minDate.getDate() - 1);
   }
   const query = `
-	select
-	  a.id,
-	  a.employee_id,
-	  a.shift_num::integer,
-	  a.date,
-	  a.date_start,
-	  a.date_stop,
-	  b.segments
-	from timeclock_shifts_count a
-	join (
-	  select
-	    employee_id,
-	    shift_num,
-		array_to_json(array_agg((extract(epoch from date_start), extract(epoch from date_stop)))) as segments
-	  from timeclock_shifts_count
-	  group by employee_id, shift_num
-	) b on (a.employee_id = b.employee_id and a.shift_num = b.shift_num)
+    select
+      a.id,
+      a.employee_id,
+      a.shift_num::integer,
+      a.date,
+      a.date_start,
+      a.date_stop,
+      b.segments
+    from timeclock_shifts_count a
+    join (
+      select
+    	employee_id,
+    	shift_num,
+    	array_to_json(array_agg(array[extract(epoch from date_start), extract(epoch from date_stop)])) as segments
+      from timeclock_shifts_count
+      group by employee_id, shift_num
+    ) b on (a.employee_id = b.employee_id and a.shift_num = b.shift_num)
 	where (
 	  ((date_stop is null or date_stop > $1) and date_start < $2) or
 	  (date_start < $1 and date_stop > $2)
